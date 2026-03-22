@@ -1,0 +1,23 @@
+{
+  "name": "coffee-concierge-tulsa",
+  "version": "1.0.0",
+  "description": "A local-first coffee guide for Tulsa, OK — find independent shops near you for work, dates, or just great coffee.",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .jsx,.js"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "vite": "^5.0.8"
+  }
+}

@@ -1,0 +1,11 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  base: "./",          // relative paths — works on GitHub Pages and subdirectory deploys
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+  },
+});
