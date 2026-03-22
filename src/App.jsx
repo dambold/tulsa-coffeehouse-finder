@@ -1,0 +1,678 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ─── HAVERSINE ────────────────────────────────────────────────────────────────
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fmtDist(km) {
+  if (km == null) return null;
+  const mi = km * 0.621371;
+  if (mi < 0.1) return "< 0.1 mi";
+  if (mi < 10) return `${mi.toFixed(1)} mi`;
+  return `${Math.round(mi)} mi`;
+}
+
+function fmtWalk(km) {
+  if (km == null) return null;
+  const mins = Math.round((km / 5) * 60);
+  if (mins <= 1) return "1 min walk";
+  if (mins < 60) return `${mins} min walk`;
+  return `${(mins / 60).toFixed(1)} hr walk`;
+}
+
+function fmtDrive(km) {
+  if (km == null) return null;
+  const mins = Math.round((km / 40) * 60);
+  if (mins <= 1) return "1 min drive";
+  if (mins < 60) return `${mins} min drive`;
+  return `${(mins / 60).toFixed(1)} hr drive`;
+}
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+const SHOPS = [
+  {
+    id: "topeca_downtown", name: "Topeca Coffee", subtitle: "Downtown",
+    neighborhood: "Downtown",
+    lat: 36.1539, lng: -95.9928,
+    price: 2, seating: 30, outlets: 4.0, wifi: 4.5, noise: 2.0, parking: 3.0,
+    drive_thru: false, mobile_order: true, gf_food: true, df_milks: 3,
+    aesthetic: 4.2, dessert: 3.8, cleanliness: 4.5, restroom: true,
+    hours: "Mon–Thu 7am–10pm · Fri–Sat 7am–10pm · Sun 8am–6pm",
+    address: "111 E 2nd St, Tulsa, OK", phone: "(918) 382-0100",
+    website: "https://topecacoffee.com", accent: "#C9763D",
+    badges: ["Laptop Haven", "Local Icon", "Date-Night Gem"],
+    whyNotChain: "Topeca roasts their own beans on-site — every cup is sourced and crafted in Tulsa. You're tasting something Starbucks literally cannot replicate.",
+    personality: "The gold standard of Tulsa specialty coffee. Regulars have their own table. The espresso is genuinely exceptional.",
+    occasionFit: { date: 5, work: 5, explore: 5, relax: 5, quick: 2 },
+  },
+  {
+    id: "chimera_cafe", name: "Chimera Café", subtitle: "Arts District",
+    neighborhood: "Arts District",
+    lat: 36.1588, lng: -95.9915,
+    price: 2, seating: 26, outlets: 3.5, wifi: 4.0, noise: 2.5, parking: 3.0,
+    drive_thru: false, mobile_order: true, gf_food: true, df_milks: 2,
+    aesthetic: 4.0, dessert: 4.0, cleanliness: 4.2, restroom: true,
+    hours: "Mon–Thu 7am–8pm · Fri–Sat 8am–10pm · Sun 8am–4pm",
+    address: "218 N Main St, Tulsa, OK", phone: "(918) 794-8740",
+    website: "https://chimeratulsa.com", accent: "#7C6FA0",
+    badges: ["First Date Gem", "Instagram-worthy", "Artsy Locals Pick"],
+    whyNotChain: "Chimera is woven into Tulsa's arts scene — rotating local art on the walls, curated music, pastries from a bakery down the block.",
+    personality: "Where creative Tulsa hangs out. Moody lighting, interesting people, drinks that look as good as they taste.",
+    occasionFit: { date: 5, work: 3, explore: 4, relax: 5, quick: 2 },
+  },
+  {
+    id: "doubleshot", name: "DoubleShot Coffee", subtitle: "Midtown",
+    neighborhood: "Midtown",
+    lat: 36.1259, lng: -95.9747,
+    price: 3, seating: 24, outlets: 3.0, wifi: 3.8, noise: 3.0, parking: 3.5,
+    drive_thru: false, mobile_order: false, gf_food: false, df_milks: 2,
+    aesthetic: 4.3, dessert: 3.5, cleanliness: 4.4, restroom: true,
+    hours: "Mon–Fri 7am–7pm · Sat 8am–6pm · Sun 8am–4pm",
+    address: "1552 E 15th St, Tulsa, OK", phone: "(918) 794-0501",
+    website: "https://doubleshotcoffee.com", accent: "#8B5C2A",
+    badges: ["Coffee Nerd HQ", "Hidden Gem", "Serious Espresso"],
+    whyNotChain: "One of the most respected micro-roasters in the region. Coffee enthusiasts make pilgrimages here. The baristas can talk terroir.",
+    personality: "For people who actually think about coffee. Low-key, unpretentious, utterly serious about what's in your cup.",
+    occasionFit: { date: 3, work: 4, explore: 5, relax: 4, quick: 2 },
+  },
+  {
+    id: "press_cafe", name: "Press Café", subtitle: "South Tulsa",
+    neighborhood: "South Tulsa",
+    lat: 36.1315, lng: -95.9568,
+    price: 2, seating: 20, outlets: 3.0, wifi: 3.8, noise: 2.0, parking: 4.0,
+    drive_thru: true, mobile_order: true, gf_food: true, df_milks: 2,
+    aesthetic: 3.8, dessert: 3.2, cleanliness: 4.2, restroom: true,
+    hours: "Mon–Fri 6am–7pm · Sat–Sun 7am–5pm",
+    address: "6081 S Yale Ave, Tulsa, OK", phone: "(918) 491-7100",
+    website: "https://presscafetulsa.com", accent: "#4A8C6F",
+    badges: ["Easy Morning Stop", "Family-Friendly", "Dietary Inclusive"],
+    whyNotChain: "Locally owned with genuine gluten-free and dairy-free options — not an afterthought. Drive-thru means you don't sacrifice speed for quality.",
+    personality: "The reliable neighborhood spot that never lets you down. Perfect for mornings when you need to be somewhere.",
+    occasionFit: { date: 2, work: 3, explore: 2, relax: 3, quick: 5 },
+  },
+  {
+    id: "quickbrew", name: "QuickBrew", subtitle: "Drive-Thru",
+    neighborhood: "Midtown",
+    lat: 36.1601, lng: -95.9851,
+    price: 1, seating: 4, outlets: 1.0, wifi: 2.5, noise: 3.5, parking: 4.5,
+    drive_thru: true, mobile_order: true, gf_food: false, df_milks: 1,
+    aesthetic: 2.8, dessert: 2.5, cleanliness: 3.8, restroom: false,
+    hours: "Mon–Fri 5am–2pm · Sat–Sun 6am–Noon",
+    address: "4500 S Harvard Ave, Tulsa, OK", phone: "(918) 555-0199",
+    website: null, accent: "#D4A017",
+    badges: ["Fastest in Tulsa", "Budget Pick", "Early Bird Special"],
+    whyNotChain: "Locally owned, cheaper than Dutch Bros, and the cold brew actually slaps. No pretense, just solid coffee at a fair price.",
+    personality: "In and out in 3 minutes. The honest choice when you need caffeine, not an experience.",
+    occasionFit: { date: 1, work: 2, explore: 1, relax: 2, quick: 5 },
+  },
+];
+
+const OCCASIONS = [
+  { id: "work",    icon: "💻", label: "Work",        desc: "Wi-Fi · outlets · quiet" },
+  { id: "date",    icon: "🌙", label: "Date",         desc: "Ambience · vibe · wow factor" },
+  { id: "relax",   icon: "☕", label: "Relax",        desc: "Chill · no rush · good coffee" },
+  { id: "explore", icon: "🗺️", label: "Explore",     desc: "Discover what locals love" },
+  { id: "quick",   icon: "⚡", label: "Quick stop",   desc: "Fast · easy · drive-thru" },
+];
+
+const BADGE_STYLES = {
+  "Laptop Haven":       { bg:"rgba(56,189,248,0.1)",   border:"rgba(56,189,248,0.28)",   text:"#7DD3FC" },
+  "Local Icon":         { bg:"rgba(201,118,61,0.14)",  border:"rgba(201,118,61,0.32)",   text:"#FDBA74" },
+  "Date-Night Gem":     { bg:"rgba(236,72,153,0.1)",   border:"rgba(236,72,153,0.28)",   text:"#F9A8D4" },
+  "First Date Gem":     { bg:"rgba(236,72,153,0.1)",   border:"rgba(236,72,153,0.28)",   text:"#F9A8D4" },
+  "Instagram-worthy":   { bg:"rgba(168,85,247,0.1)",   border:"rgba(168,85,247,0.28)",   text:"#D8B4FE" },
+  "Artsy Locals Pick":  { bg:"rgba(124,111,160,0.15)", border:"rgba(124,111,160,0.35)",  text:"#C4B5FD" },
+  "Coffee Nerd HQ":     { bg:"rgba(139,92,42,0.18)",   border:"rgba(139,92,42,0.38)",    text:"#FBB86C" },
+  "Hidden Gem":         { bg:"rgba(34,197,94,0.09)",   border:"rgba(34,197,94,0.28)",    text:"#86EFAC" },
+  "Serious Espresso":   { bg:"rgba(139,92,42,0.16)",   border:"rgba(139,92,42,0.36)",    text:"#FBBF24" },
+  "Easy Morning Stop":  { bg:"rgba(74,140,111,0.12)",  border:"rgba(74,140,111,0.32)",   text:"#6EE7B7" },
+  "Family-Friendly":    { bg:"rgba(74,140,111,0.1)",   border:"rgba(74,140,111,0.28)",   text:"#6EE7B7" },
+  "Dietary Inclusive":  { bg:"rgba(74,140,111,0.1)",   border:"rgba(74,140,111,0.28)",   text:"#6EE7B7" },
+  "Fastest in Tulsa":   { bg:"rgba(212,160,23,0.12)",  border:"rgba(212,160,23,0.32)",   text:"#FDE68A" },
+  "Budget Pick":        { bg:"rgba(212,160,23,0.1)",   border:"rgba(212,160,23,0.28)",   text:"#FDE68A" },
+  "Early Bird Special": { bg:"rgba(212,160,23,0.1)",   border:"rgba(212,160,23,0.28)",   text:"#FDE68A" },
+};
+
+// ─── SCORING ──────────────────────────────────────────────────────────────────
+function scoreShop(shop, occasion) {
+  const fit = shop.occasionFit[occasion];
+  return fit != null ? Math.round((fit / 5) * 100) : 50;
+}
+
+// Composite score: occasion fit (70%) + proximity bonus (30%)
+function compositeScore(shop, occasion, userLat, userLng) {
+  const fitScore = scoreShop(shop, occasion);
+  if (userLat == null) return fitScore;
+  const km = haversineKm(userLat, userLng, shop.lat, shop.lng);
+  // proximity bonus: 0 km = +30, 5 km = 0, beyond 5 km = small negative
+  const proxBonus = Math.max(-10, 30 - km * 6);
+  return Math.round(fitScore * 0.7 + proxBonus * 1.0);
+}
+
+// ─── AI CONCIERGE ─────────────────────────────────────────────────────────────
+async function askConcierge(message, shops, userLat, userLng) {
+  const shopContext = shops.map(s => {
+    const km = userLat != null ? haversineKm(userLat, userLng, s.lat, s.lng) : null;
+    const distStr = km != null ? ` | ${fmtDist(km)} away (${fmtDrive(km)})` : "";
+    return `${s.name} (${s.neighborhood}${distStr}): ${s.personality} Badges: ${s.badges.join(", ")}. ` +
+      `Fit — work:${s.occasionFit.work}/5 date:${s.occasionFit.date}/5 relax:${s.occasionFit.relax}/5 ` +
+      `explore:${s.occasionFit.explore}/5 quick:${s.occasionFit.quick}/5. ` +
+      `Price: ${"$".repeat(s.price)}. Drive-thru: ${s.drive_thru}. GF: ${s.gf_food}.`;
+  }).join("\n");
+
+  const locationNote = userLat != null
+    ? `The user's current location is known. Distance to each shop is included. Prioritize closer shops when fit scores are similar.`
+    : `The user's location is not available — give general recommendations.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: `You are Coffee Concierge — a warm, opinionated local guide for Tulsa's independent coffee scene.
+Help visitors and locals find the perfect indie spot. Be specific, punchy, conversational. Recommend 1-2 shops max with a clear reason.
+Never be generic. Keep responses under 110 words. All shops are locally owned — no chains.
+${locationNote}
+
+Shops:
+${shopContext}`,
+      messages: [{ role: "user", content: message }],
+    }),
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || "Having trouble connecting — browse the cards below!";
+}
+
+// ─── TINY COMPONENTS ──────────────────────────────────────────────────────────
+function ScoreRing({ score, color, size = 52 }) {
+  const r = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (score / 100) * circ;
+  return (
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={4}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4}
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+        style={{ transition: "stroke-dasharray 0.7s cubic-bezier(0.34,1.56,0.64,1)" }}/>
+      <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
+        fill="#fff" fontSize={12} fontWeight="700"
+        style={{ transform:`rotate(90deg)`, transformOrigin:`${size/2}px ${size/2}px`, fontFamily:"inherit" }}>
+        {score}
+      </text>
+    </svg>
+  );
+}
+
+function Badge({ label }) {
+  const s = BADGE_STYLES[label] || { bg:"rgba(255,255,255,0.06)", border:"rgba(255,255,255,0.14)", text:"rgba(255,255,255,0.55)" };
+  return (
+    <span style={{ fontSize:10, padding:"3px 8px", borderRadius:99, background:s.bg, border:`1px solid ${s.border}`, color:s.text, fontWeight:600, whiteSpace:"nowrap" }}>
+      {label}
+    </span>
+  );
+}
+
+function Chip({ children }) {
+  return <span style={{ fontSize:10, padding:"3px 8px", borderRadius:99, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.48)" }}>{children}</span>;
+}
+
+function DistancePill({ km, accent }) {
+  if (km == null) return null;
+  const mi = km * 0.621371;
+  const drive = fmtDrive(km);
+  const walk = km < 1.5 ? fmtWalk(km) : null;
+  return (
+    <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:4 }}>
+      <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background: accent+"18", border:`1px solid ${accent}35`, color: accent, fontWeight:700 }}>
+        📍 {mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi away
+      </span>
+      <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.5)" }}>
+        🚗 {drive}
+      </span>
+      {walk && (
+        <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.5)" }}>
+          🚶 {walk}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function OccasionBars({ shop, activeOccasion }) {
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5 }}>
+      {OCCASIONS.map(occ => {
+        const score = scoreShop(shop, occ.id);
+        const active = occ.id === activeOccasion;
+        return (
+          <div key={occ.id} style={{ padding:"6px 8px", borderRadius:8, background: active ? shop.accent+"18":"rgba(255,255,255,0.03)", border:`1px solid ${active ? shop.accent+"40":"rgba(255,255,255,0.06)"}`, display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:11 }}>{occ.icon}</span>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:9, color:"rgba(255,255,255,0.38)", marginBottom:3 }}>{occ.label}</div>
+              <div style={{ height:3, borderRadius:2, background:"rgba(255,255,255,0.08)" }}>
+                <div style={{ width:`${score}%`, height:"100%", borderRadius:2, background: active ? shop.accent:"rgba(255,255,255,0.22)", transition:"width 0.5s ease" }}/>
+              </div>
+            </div>
+            <span style={{ fontSize:9, fontWeight:700, color: active ? shop.accent:"rgba(255,255,255,0.3)" }}>{score}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── SHOP CARD ────────────────────────────────────────────────────────────────
+function ShopCard({ shop, occasion, expanded, onToggle, distKm }) {
+  const score = scoreShop(shop, occasion);
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(shop.address)}`;
+
+  return (
+    <div onClick={onToggle} style={{ background: expanded ? "linear-gradient(135deg,rgba(28,20,13,0.98),rgba(20,14,8,0.98))":"rgba(22,16,10,0.7)", border:`1px solid ${expanded ? shop.accent+"55":"rgba(255,255,255,0.07)"}`, borderRadius:20, padding:"16px 18px", cursor:"pointer", transition:"all 0.3s cubic-bezier(0.34,1.56,0.64,1)", transform: expanded ? "scale(1.01)":"scale(1)", boxShadow: expanded ? `0 20px 60px ${shop.accent}22`:"0 2px 12px rgba(0,0,0,0.3)", marginBottom:10, backdropFilter:"blur(12px)" }}>
+
+      {/* TOP ROW */}
+      <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
+        <ScoreRing score={score} color={shop.accent} size={52}/>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:6, flexWrap:"wrap" }}>
+            <span style={{ fontSize:16, fontWeight:800, color:"#F5EDD8", fontFamily:"'Playfair Display',Georgia,serif" }}>{shop.name}</span>
+            <span style={{ fontSize:11, color:"rgba(255,255,255,0.32)" }}>{shop.neighborhood}</span>
+          </div>
+          {distKm != null && <DistancePill km={distKm} accent={shop.accent}/>}
+          <p style={{ fontSize:12, color:"rgba(255,255,255,0.48)", margin:"5px 0 8px", lineHeight:1.45 }}>{shop.personality}</p>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+            {shop.badges.map(b => <Badge key={b} label={b}/>)}
+          </div>
+        </div>
+        <div style={{ color:"rgba(255,255,255,0.22)", fontSize:14, transform: expanded?"rotate(180deg)":"rotate(0deg)", transition:"transform 0.3s ease", marginTop:2, flexShrink:0 }}>▾</div>
+      </div>
+
+      {/* EXPANDED */}
+      {expanded && (
+        <div style={{ marginTop:16, animation:"fadeIn 0.22s ease" }}>
+
+          {/* Why not a chain */}
+          <div style={{ padding:"12px 14px", borderRadius:12, marginBottom:12, background:`linear-gradient(135deg,${shop.accent}14,${shop.accent}07)`, border:`1px solid ${shop.accent}30` }}>
+            <div style={{ fontSize:10, color:shop.accent, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:5 }}>☕ Why this beats a chain</div>
+            <p style={{ fontSize:12, color:"rgba(255,255,255,0.62)", margin:0, lineHeight:1.5 }}>{shop.whyNotChain}</p>
+          </div>
+
+          {/* Occasion bars */}
+          <div style={{ marginBottom:12 }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>Fit for every occasion</div>
+            <OccasionBars shop={shop} activeOccasion={occasion}/>
+          </div>
+
+          {/* Amenity chips */}
+          <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:12 }}>
+            {shop.drive_thru   && <Chip>🚗 Drive-Thru</Chip>}
+            {shop.mobile_order && <Chip>📱 Mobile Order</Chip>}
+            {shop.gf_food      && <Chip>🌾 Gluten-Free</Chip>}
+            {shop.df_milks > 1 && <Chip>🥛 Dairy-Free Milks</Chip>}
+            {shop.restroom     && <Chip>🚻 Restroom</Chip>}
+            <Chip>{"$".repeat(shop.price)} price</Chip>
+          </div>
+
+          {/* Info */}
+          <div style={{ padding:"10px 12px", background:"rgba(255,255,255,0.04)", borderRadius:10, fontSize:11, color:"rgba(255,255,255,0.42)", lineHeight:1.9, marginBottom:12 }}>
+            <div>🕐 {shop.hours}</div>
+            <div>📍 {shop.address}</div>
+            {shop.phone && <div>📞 {shop.phone}</div>}
+          </div>
+
+          {/* CTAs */}
+          <div style={{ display:"flex", gap:8 }}>
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+              style={{ flex:1, padding:"11px 0", borderRadius:10, textAlign:"center", background:shop.accent, color:"#fff", fontWeight:700, fontSize:12, textDecoration:"none" }}>
+              {distKm != null ? "🧭 Get Directions" : "Open in Maps"}
+            </a>
+            {shop.website && (
+              <a href={shop.website} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                style={{ flex:1, padding:"11px 0", borderRadius:10, textAlign:"center", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"rgba(255,255,255,0.72)", fontWeight:600, fontSize:12, textDecoration:"none" }}>
+                Website
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CONCIERGE CHAT ───────────────────────────────────────────────────────────
+function ConciergePanel({ onClose, userLat, userLng }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([{
+    role: "assistant",
+    text: userLat != null
+      ? "Hey! I can see your location — I'll factor in how far each shop is from you. What are you looking for? A date spot, somewhere to work, just want great local coffee?"
+      : "Hey! I'm your Tulsa coffee guide. Tell me what you need — a date spot, somewhere to work, just want to explore beyond the chains? I'll find the right spot."
+  }]);
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages]);
+
+  const send = async (msg) => {
+    const text = msg || input.trim();
+    if (!text || loading) return;
+    setInput("");
+    setMessages(prev => [...prev, { role:"user", text }]);
+    setLoading(true);
+    try {
+      const reply = await askConcierge(text, SHOPS, userLat, userLng);
+      setMessages(prev => [...prev, { role:"assistant", text:reply }]);
+    } catch {
+      setMessages(prev => [...prev, { role:"assistant", text:"Having trouble connecting — browse the cards below!" }]);
+    }
+    setLoading(false);
+  };
+
+  const starters = userLat != null
+    ? ["Best spot near me for a date?", "Closest place to work with Wi-Fi?", "What's the top local shop nearby?", "I need gluten-free options"]
+    : ["Nervous first date, somewhere cozy?", "Best Wi-Fi for remote work?", "I just arrived in Tulsa — where do locals go?", "Gluten-free options?"];
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.72)", backdropFilter:"blur(10px)", display:"flex", alignItems:"flex-end" }}>
+      <div style={{ width:"100%", maxWidth:440, margin:"0 auto", background:"linear-gradient(180deg,#1A1108 0%,#0D0907 100%)", border:"1px solid rgba(201,118,61,0.22)", borderRadius:"24px 24px 0 0", maxHeight:"84vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}>
+
+        <div style={{ padding:"16px 20px 12px", borderBottom:"1px solid rgba(255,255,255,0.06)", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:800, color:"#F5EDD8", fontFamily:"'Playfair Display',Georgia,serif" }}>AI Coffee Guide</div>
+            <div style={{ fontSize:11, color: userLat != null ? "#4A8C6F" : "#C9763D" }}>
+              {userLat != null ? "📍 Using your location" : "Knows every local spot in Tulsa"}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.08)", border:"none", color:"rgba(255,255,255,0.5)", width:30, height:30, borderRadius:99, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+          {messages.map((m, i) => (
+            <div key={i} style={{ display:"flex", justifyContent: m.role==="user"?"flex-end":"flex-start" }}>
+              <div style={{ maxWidth:"82%", padding:"10px 14px", borderRadius:16, background: m.role==="user" ? "linear-gradient(135deg,#C9763D,#E8A870)":"rgba(255,255,255,0.07)", border: m.role==="user" ? "none":"1px solid rgba(255,255,255,0.08)", fontSize:13, lineHeight:1.5, color: m.role==="user"?"#fff":"rgba(255,255,255,0.78)", borderBottomRightRadius: m.role==="user"?4:16, borderBottomLeftRadius: m.role==="assistant"?4:16 }}>
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display:"flex", gap:5, padding:"8px 14px" }}>
+              {[0,1,2].map(i => <div key={i} style={{ width:6, height:6, borderRadius:99, background:"#C9763D", opacity:0.6, animation:`bounce 1s ease ${i*0.15}s infinite` }}/>)}
+            </div>
+          )}
+          <div ref={bottomRef}/>
+        </div>
+
+        {messages.length === 1 && (
+          <div style={{ padding:"0 16px 10px", display:"flex", flexWrap:"wrap", gap:6, flexShrink:0 }}>
+            {starters.map(s => (
+              <button key={s} onClick={() => send(s)} style={{ fontSize:11, padding:"5px 10px", borderRadius:99, background:"rgba(201,118,61,0.10)", border:"1px solid rgba(201,118,61,0.28)", color:"#FDBA74", cursor:"pointer", fontFamily:"inherit" }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ padding:"0 16px 4px", display:"flex", gap:8, flexShrink:0 }}>
+          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter" && send()}
+            placeholder="Ask me anything about Tulsa coffee…"
+            style={{ flex:1, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"10px 14px", color:"#F5EDD8", fontSize:13, outline:"none" }}/>
+          <button onClick={() => send()} disabled={loading || !input.trim()}
+            style={{ width:40, height:40, borderRadius:12, background: input.trim()?"#C9763D":"rgba(255,255,255,0.06)", border:"none", cursor: input.trim()?"pointer":"default", color:"#fff", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"background 0.2s" }}>
+            ↑
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LOCATION BANNER ─────────────────────────────────────────────────────────
+function LocationBanner({ status, onRequest, userLat }) {
+  if (status === "granted" && userLat != null) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:12, background:"rgba(74,140,111,0.12)", border:"1px solid rgba(74,140,111,0.28)", marginBottom:14, fontSize:12, color:"#6EE7B7" }}>
+        <span style={{ fontSize:16 }}>📍</span>
+        <span>Sorting by distance from you</span>
+      </div>
+    );
+  }
+  if (status === "denied") {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:12, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", marginBottom:14, fontSize:12, color:"rgba(255,255,255,0.4)" }}>
+        <span>📍 Location blocked — showing all Tulsa spots</span>
+      </div>
+    );
+  }
+  if (status === "loading") {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", borderRadius:12, background:"rgba(201,118,61,0.1)", border:"1px solid rgba(201,118,61,0.22)", marginBottom:14, fontSize:12, color:"#C9763D" }}>
+        <span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>⏳</span>
+        <span>Getting your location…</span>
+      </div>
+    );
+  }
+  // idle — show request banner
+  return (
+    <button onClick={onRequest} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"12px 14px", borderRadius:14, background:"linear-gradient(135deg,rgba(201,118,61,0.16),rgba(201,118,61,0.08))", border:"1px solid rgba(201,118,61,0.35)", cursor:"pointer", marginBottom:14, fontFamily:"inherit", textAlign:"left" }}>
+      <span style={{ fontSize:22 }}>📍</span>
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:"#E8A870" }}>Find shops near you</div>
+        <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", marginTop:1 }}>Share location to sort by distance & get directions</div>
+      </div>
+      <span style={{ fontSize:18, color:"#C9763D" }}>→</span>
+    </button>
+  );
+}
+
+// ─── NEAR ME QUICKPICK ────────────────────────────────────────────────────────
+function NearMeQuickPick({ shops, userLat, userLng, occasion, onExpand }) {
+  if (userLat == null || shops.length === 0) return null;
+  const withDist = shops.map(s => ({ ...s, km: haversineKm(userLat, userLng, s.lat, s.lng) }));
+  const closest = withDist.sort((a, b) => a.km - b.km)[0];
+  const bestFit = [...withDist].sort((a, b) => compositeScore(b, occasion, userLat, userLng) - compositeScore(a, occasion, userLat, userLng))[0];
+
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Quick picks near you</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        {[
+          { label:"Closest", shop: closest, icon:"📍", sub: fmtDist(closest.km) },
+          { label:"Best for you", shop: bestFit, icon: OCCASIONS.find(o=>o.id===occasion)?.icon, sub: OCCASIONS.find(o=>o.id===occasion)?.label },
+        ].map(({ label, shop, icon, sub }) => (
+          <button key={label} onClick={() => onExpand(shop.id)} style={{ padding:"10px 12px", borderRadius:14, background:`linear-gradient(135deg,${shop.accent}14,${shop.accent}07)`, border:`1px solid ${shop.accent}35`, cursor:"pointer", textAlign:"left", fontFamily:"inherit", transition:"transform 0.2s" }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginBottom:3 }}>{icon} {label}</div>
+            <div style={{ fontSize:13, fontWeight:700, color:"#F5EDD8", marginBottom:2, fontFamily:"'Playfair Display',Georgia,serif" }}>{shop.name}</div>
+            <div style={{ fontSize:10, color: shop.accent }}>{sub}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+export default function CoffeeConcierge() {
+  const [occasion, setOccasion]           = useState("explore");
+  const [expandedId, setExpandedId]       = useState(null);
+  const [showConcierge, setShowConcierge] = useState(false);
+  const [dismissedBanner, setDismissedBanner] = useState(false);
+
+  // Geolocation state
+  const [userLat, setUserLat]             = useState(null);
+  const [userLng, setUserLng]             = useState(null);
+  const [locStatus, setLocStatus]         = useState("idle"); // idle | loading | granted | denied
+
+  const [gfOnly, setGfOnly]               = useState(false);
+  const [showFilters, setShowFilters]     = useState(false);
+  const [loaded, setLoaded]               = useState(false);
+
+  useEffect(() => { setTimeout(() => setLoaded(true), 80); }, []);
+
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) { setLocStatus("denied"); return; }
+    setLocStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setUserLat(pos.coords.latitude);
+        setUserLng(pos.coords.longitude);
+        setLocStatus("granted");
+      },
+      () => setLocStatus("denied"),
+      { timeout: 8000, maximumAge: 300000 }
+    );
+  }, []);
+
+  // Compute sorted list with distance
+  const shopsWithDist = SHOPS.map(s => ({
+    ...s,
+    km: userLat != null ? haversineKm(userLat, userLng, s.lat, s.lng) : null,
+  }));
+
+  const filtered = shopsWithDist
+    .filter(s => !gfOnly || s.gf_food)
+    .sort((a, b) => {
+      if (userLat != null) {
+        return compositeScore(b, occasion, userLat, userLng) - compositeScore(a, occasion, userLat, userLng);
+      }
+      return scoreShop(b, occasion) - scoreShop(a, occasion);
+    });
+
+  const S = { // shared style shorthand
+    card: (active) => ({
+      padding:"11px 10px", borderRadius:14,
+      border:`1px solid ${active ? "rgba(201,118,61,0.5)":"rgba(255,255,255,0.08)"}`,
+      background: active ? "linear-gradient(135deg,rgba(201,118,61,0.18),rgba(201,118,61,0.07))":"rgba(255,255,255,0.04)",
+      cursor:"pointer", textAlign:"center",
+      transition:"all 0.2s", transform: active?"scale(1.02)":"scale(1)",
+      fontFamily:"inherit",
+    }),
+  };
+
+  return (
+    <>
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0D0907 0%,#140E08 50%,#0A0906 100%)", fontFamily:"'DM Sans','Helvetica Neue',sans-serif", color:"#F5EDD8", position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"fixed", top:-120, right:-80, width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(201,118,61,0.10) 0%,transparent 70%)", pointerEvents:"none", zIndex:0 }}/>
+        <div style={{ position:"fixed", bottom:-100, left:-60, width:350, height:350, borderRadius:"50%", background:"radial-gradient(circle,rgba(124,111,160,0.07) 0%,transparent 70%)", pointerEvents:"none", zIndex:0 }}/>
+
+        <div style={{ maxWidth:440, margin:"0 auto", position:"relative", zIndex:1, padding:"0 16px 100px", opacity:loaded?1:0, transform:loaded?"translateY(0)":"translateY(12px)", transition:"opacity 0.5s ease,transform 0.5s ease" }}>
+
+          {/* HEADER */}
+          <div style={{ padding:"44px 0 18px", textAlign:"center" }}>
+            <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"rgba(201,118,61,0.10)", border:"1px solid rgba(201,118,61,0.22)", borderRadius:99, padding:"3px 12px", marginBottom:12, fontSize:10, color:"#C9763D", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>
+              ☕ Tulsa · Independent Only
+            </div>
+            <h1 style={{ fontSize:32, fontWeight:900, margin:0, fontFamily:"'Playfair Display',Georgia,serif", background:"linear-gradient(135deg,#F5EDD8,#C9763D 55%,#E8A870)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", lineHeight:1.1, letterSpacing:"-0.5px" }}>
+              Coffee<br/>Concierge
+            </h1>
+          </div>
+
+          {/* CHAIN REFUGEE BANNER */}
+          {!dismissedBanner && (
+            <div style={{ background:"linear-gradient(135deg,rgba(201,118,61,0.14),rgba(201,118,61,0.07))", border:"1px solid rgba(201,118,61,0.32)", borderRadius:16, padding:"13px 16px", marginBottom:14, position:"relative", animation:"fadeIn 0.4s ease" }}>
+              <button onClick={() => setDismissedBanner(true)} style={{ position:"absolute", top:10, right:12, background:"none", border:"none", color:"rgba(255,255,255,0.28)", cursor:"pointer", fontSize:13 }}>✕</button>
+              <div style={{ fontSize:10, color:"#C9763D", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Visiting Tulsa?</div>
+              <p style={{ fontSize:12, color:"rgba(255,255,255,0.62)", margin:0, lineHeight:1.5, paddingRight:18 }}>
+                Every shop here is <strong style={{ color:"#F5EDD8" }}>locally owned</strong>. Share your location for distance-sorted picks, or ask the AI guide what's best for your vibe.
+              </p>
+            </div>
+          )}
+
+          {/* LOCATION BANNER */}
+          <LocationBanner status={locStatus} onRequest={requestLocation} userLat={userLat}/>
+
+          {/* NEAR ME QUICKPICKS */}
+          <NearMeQuickPick shops={shopsWithDist} userLat={userLat} userLng={userLng} occasion={occasion} onExpand={(id) => { setExpandedId(id); setTimeout(() => document.getElementById(`card-${id}`)?.scrollIntoView({ behavior:"smooth", block:"center" }), 100); }}/>
+
+          {/* OCCASION PICKER */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", fontWeight:700, marginBottom:8, letterSpacing:"0.07em", textTransform:"uppercase" }}>What are you here for?</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7 }}>
+              {OCCASIONS.map(occ => {
+                const active = occasion === occ.id;
+                return (
+                  <button key={occ.id} onClick={() => { setOccasion(occ.id); setExpandedId(null); }} style={S.card(active)}>
+                    <div style={{ fontSize:18, marginBottom:2 }}>{occ.icon}</div>
+                    <div style={{ fontSize:12, fontWeight: active?700:500, color: active?"#E8A870":"rgba(255,255,255,0.48)" }}>{occ.label}</div>
+                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.22)", marginTop:1 }}>{occ.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* FILTER */}
+          <div style={{ marginBottom:12 }}>
+            <button onClick={() => setShowFilters(f=>!f)} style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"7px 13px", color: showFilters?"#C9763D":"rgba(255,255,255,0.42)", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"inherit" }}>
+              <span>⚙️</span><span>Filters {gfOnly?"·":""}</span><span style={{ opacity:0.4 }}>{showFilters?"▲":"▼"}</span>
+            </button>
+            {showFilters && (
+              <div style={{ marginTop:8, padding:"12px 14px", background:"rgba(20,14,8,0.92)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:12, animation:"fadeIn 0.2s ease" }}>
+                <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12, color:"rgba(255,255,255,0.62)" }}>
+                  <input type="checkbox" checked={gfOnly} onChange={e => setGfOnly(e.target.checked)} style={{ accentColor:"#C9763D" }}/>
+                  Gluten-free options required
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* RESULTS HEADER */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.28)", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+              {filtered.length} local spots
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)" }}>
+              {userLat != null ? "sorted by distance + fit" : `ranked by ${OCCASIONS.find(o=>o.id===occasion)?.icon} ${OCCASIONS.find(o=>o.id===occasion)?.label} fit`}
+            </div>
+          </div>
+
+          {/* CARDS */}
+          {filtered.length === 0
+            ? <div style={{ textAlign:"center", padding:"40px 20px", color:"rgba(255,255,255,0.28)", fontSize:13 }}>No shops match those filters.</div>
+            : filtered.map((shop, i) => (
+              <div key={shop.id} id={`card-${shop.id}`} style={{ opacity:loaded?1:0, transform:loaded?"translateY(0)":"translateY(20px)", transition:`opacity 0.4s ease ${i*0.07}s,transform 0.4s ease ${i*0.07}s` }}>
+                <ShopCard
+                  shop={shop} occasion={occasion}
+                  expanded={expandedId === shop.id}
+                  onToggle={() => setExpandedId(prev => prev===shop.id ? null : shop.id)}
+                  distKm={shop.km}
+                />
+              </div>
+            ))
+          }
+
+          <div style={{ textAlign:"center", marginTop:20, fontSize:10, color:"rgba(255,255,255,0.15)", lineHeight:1.8 }}>
+            ☕ Coffee Concierge · Tulsa Edition<br/>All spots independently owned & operated
+          </div>
+        </div>
+
+        {/* FLOATING AI BUTTON */}
+        <button onClick={() => setShowConcierge(true)} style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"linear-gradient(135deg,#C9763D,#E8A870)", border:"none", borderRadius:99, padding:"14px 26px", color:"#fff", fontWeight:800, fontSize:14, cursor:"pointer", zIndex:50, boxShadow:"0 8px 32px rgba(201,118,61,0.42)", display:"flex", alignItems:"center", gap:8, fontFamily:"inherit", whiteSpace:"nowrap", animation:"floatPulse 3s ease-in-out infinite" }}>
+          <span style={{ fontSize:15 }}>✨</span>
+          {userLat != null ? "Ask the AI Guide (Near You)" : "Ask the AI Guide"}
+        </button>
+      </div>
+
+      {showConcierge && <ConciergePanel onClose={() => setShowConcierge(false)} userLat={userLat} userLng={userLng}/>}
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;600;700;800&display=swap');
+        * { box-sizing:border-box; }
+        ::-webkit-scrollbar { display:none; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes slideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
+        @keyframes bounce { 0%,100% { transform:translateY(0); opacity:0.6; } 50% { transform:translateY(-5px); opacity:1; } }
+        @keyframes floatPulse { 0%,100% { box-shadow:0 8px 32px rgba(201,118,61,0.42); } 50% { box-shadow:0 12px 42px rgba(201,118,61,0.62); } }
+        @keyframes spin { to { transform:rotate(360deg); } }
+      `}</style>
+    </>
+  );
+}
